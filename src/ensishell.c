@@ -12,6 +12,9 @@
 #include "variante.h"
 #include "readcmd.h"
 
+#include <sys/time.h>
+
+#pragma clang diagnostic push
 #ifndef VARIANTE
 #error "Variante non défini !!"
 #endif
@@ -21,6 +24,41 @@
  * following lines.  You may also have to comment related pkg-config
  * lines in CMakeLists.txt.
  */
+
+struct List_Tache {
+    int num_tache;
+    char * cmd;
+    char bg;
+    struct List_Tache *next;
+    struct timeval debut;
+};
+
+struct List_Tache list_current;
+struct List_Tache list_pere;
+
+void add_list(struct List_Tache *l, int num_tache, char* cmd, unsigned char bg){
+    l->next = malloc(sizeof (struct List_Tache));
+    l->next->next=NULL;
+    l->next->num_tache = num_tache;
+    l->next->bg = bg;
+    l->next->cmd = cmd;
+    gettimeofday(&(l->next->debut), NULL);
+
+    l= l->next;
+}
+
+
+
+void read_and_execute(char *line){
+
+    struct cmdline *cmd;
+    cmd = parsecmd(&line);
+
+    if (cmd->err != NULL){
+        printf("error: %s \n", cmd->err);
+    }
+}
+
 
 #if USE_GUILE == 1
 #include <libguile.h>
