@@ -13,8 +13,14 @@
 #include "readcmd.h"
 
 #include <sys/time.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <sys/resource.h>
+#include <sys/time.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
-#pragma clang diagnostic push
+/*#pragma clang diagnostic push*/
 #ifndef VARIANTE
 #error "Variante non défini !!"
 #endif
@@ -26,38 +32,151 @@
  */
 
 struct List_Tache {
-    int num_tache;
+	pid_t  pid;
     char * cmd;
-    char bg;
+    //char bg;
+	//int wait; //0 si il n'est pas en wait 
+	//int numero;
     struct List_Tache *next;
     struct timeval debut;
 };
 
-struct List_Tache list_current;
-struct List_Tache list_pere;
+struct List_Tache *list_current = NULL ;
+struct List_Tache *list_root =NULL;
 
-void add_list(struct List_Tache *l, int num_tache, char* cmd, unsigned char bg){
+/*
+void add_list(struct List_Tache *l, pid_t pid, char* cmd, unsigned char bg, int wait){
     l->next = malloc(sizeof (struct List_Tache));
     l->next->next=NULL;
-    l->next->num_tache = num_tache;
+    l->next-> pid = pid;
     l->next->bg = bg;
     l->next->cmd = cmd;
+	l->next->numero = l->numero +1;
+	l->next->wait=wait;
     gettimeofday(&(l->next->debut), NULL);
 
     l= l->next;
+}*/
+
+
+
+struct List_Tache* new_job(char * cmd, pid_t pid, struct List_Tache * head){
+	struct List_Tache* new= malloc(sizeof(struct List_Tache));
+	new->pid=pid;
+	new->cmd= malloc(sizeof(char)*strlen(cmd +1));
+	strcpy(new->cmd, cmd);
+	new->next = head;
+	struct timeval debut;
+	gettimeofday(&debut, NULL);
+	new->debut=debut;
+
+	return new;
 }
 
 
+void display_list(void){
+	int statut;
+	struct List_Tache *job = list_root;
+	while (job->next!=NULL){
+		statut=waitpid(job->pid, NULL, WNOHANG);
+		if (!statut){
+			printf("Processus %i is processing : commande %s", job->pid, job->cmd);
+		}
+	}
+}
 
-void read_and_execute(char *line){
 
-    struct cmdline *cmd;
-    cmd = parsecmd(&line);
+void read_and_execute(struct cmdline *cmd){
 
     if (cmd->err != NULL){
         printf("error: %s \n", cmd->err);
     }
+
+	else if(cmd->seq[0]!=NULL){
+
+		if(!strcmp(cmd->seq[0][0], "jobs")){
+			display_list();
+		}
+		else{
+			int pipes[2];
+			pid_t pid[2];
+			if (cmd->seq[1]!=NULL){// on a un pipe |
+				pipe(pipes);
+			}
+			int n=1;
+			if (cmd->seq[1]!=NULL){n=2;}
+			int in;
+			int out;
+			int error;
+
+			for (int i=0; i<n; i++){
+				pid[i]=fork();
+				if(pid[i]<0){printf("error fork");break;}
+				else if (pid[i]==0){
+					if(cmd->seq[1]!=NULL){ //on a bien un |
+						dup2(pipes[abs(i-1)], abs(i-1));
+						close(pipes[i]);
+						close(pipes[abs(i-1)]);
+
+						
+						if (i==0 && cmd->in){
+							in=open(cmd->in, O_RDONLY);
+							dup2(in, 0);
+							close(in);
+
+						}
+						if(i==1 && cmd->out){
+							out = open(cmd->out, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
+							dup2(out, 1);
+							close(out);
+						}
+						if(i==1 && cmd->err){
+							error= open(cmd->err, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
+							dup2(error, 2);
+							close(error);
+						}
+					}
+					else{
+						if (cmd->in){
+							in=open(cmd->in, O_RDONLY);
+							dup2(in, 0);
+							close(in);
+
+						}
+						if(cmd->out){
+							out = open(cmd->out, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
+							dup2(out, 1);
+							close(out);
+						}
+						if(cmd->err){
+							error= open(cmd->err, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
+							dup2(error, 2);
+							close(error);
+						}
+					}
+					execvp(cmd->seq[i][0], cmd->seq[i]);
+				}
+				
+			}
+		
+			for(int i=0; i<n; i++){
+				if (!cmd->bg){ //si pas en background les suivants atendent
+					waitpid(pid[i], NULL, 0);
+				}
+				else{ //processus en background
+					list_current = new_job( cmd->seq[i][0], pid[i], list_current);
+				}
+				if (i==0 && cmd->seq[1] !=NULL){
+					close(pipes[1]);
+					close(pipes[0]);
+				}
+			}
+		}
+	}
+
 }
+
+
 
 
 #if USE_GUILE == 1
@@ -70,7 +189,7 @@ int question6_executer(char *line)
 	 * parsecmd, then fork+execvp, for a single command.
 	 * pipe and i/o redirection are not required.
 	 */
-	printf("Not implemented yet: can not execute %s\n", line);
+	read_and_execute(parsecmd(&line));
 
 	/* Remove this line when using parsecmd as it will free it */
 	free(line);
@@ -105,6 +224,7 @@ int main() {
         /* register "executer" function in scheme */
         scm_c_define_gsubr("executer", 1, 0, 0, executer_wrapper);
 #endif
+
 
 	while (1) {
 		struct cmdline *l;
@@ -166,6 +286,7 @@ int main() {
                         }
 			printf("\n");
 		}
+		read_and_execute(l);
 	}
 
 }
