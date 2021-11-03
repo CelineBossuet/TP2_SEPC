@@ -18,7 +18,7 @@ class Test3Jobs < Minitest::Test
 
   def test_inout
     @pty_write.puts("touch totoExpect.txt")
-    @pty_write.puts("sleep 10 &")
+    @pty_write.puts("sleep 20 &")
     @pty_write.puts("ls -s totoExpect.txt")
     @pty_write.puts("jobs")
     a = @pty_read.expect(/0 totoExpect.txt/, DELAI)

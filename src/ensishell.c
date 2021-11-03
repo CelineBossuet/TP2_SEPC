@@ -20,6 +20,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+
+#include <libguile.h>
+
 /*#pragma clang diagnostic push*/
 #ifndef VARIANTE
 #error "Variante non défini !!"
@@ -31,6 +34,7 @@
  * lines in CMakeLists.txt.
  */
 
+
 struct List_Tache {
 	pid_t  pid;
     char * cmd;
@@ -41,23 +45,10 @@ struct List_Tache {
     struct timeval debut;
 };
 
+
+
+
 struct List_Tache *list_current = NULL ;
-struct List_Tache *list_root =NULL;
-
-/*
-void add_list(struct List_Tache *l, pid_t pid, char* cmd, unsigned char bg, int wait){
-    l->next = malloc(sizeof (struct List_Tache));
-    l->next->next=NULL;
-    l->next-> pid = pid;
-    l->next->bg = bg;
-    l->next->cmd = cmd;
-	l->next->numero = l->numero +1;
-	l->next->wait=wait;
-    gettimeofday(&(l->next->debut), NULL);
-
-    l= l->next;
-}*/
-
 
 
 struct List_Tache* new_job(char * cmd, pid_t pid, struct List_Tache * head){
@@ -73,16 +64,31 @@ struct List_Tache* new_job(char * cmd, pid_t pid, struct List_Tache * head){
 	return new;
 }
 
+struct List_Tache * remove_job(struct List_Tache * head){
+    struct List_Tache *new=head->next;
+    free(head->cmd);
+    free(head);
+    return new;
+}
 
 void display_list(void){
 	int statut;
-	struct List_Tache *job = list_root;
-	while (job->next!=NULL){
-		statut=waitpid(job->pid, NULL, WNOHANG);
-		if (!statut){
-			printf("Processus %i is processing : commande %s", job->pid, job->cmd);
+	struct List_Tache *job = list_current;
+	if (job==NULL){
+		printf("pas de processus en cours \n");
+	}
+	else{
+		while (job!=NULL){
+			statut=waitpid(job->pid, NULL, WNOHANG);
+			
+			if (!statut){
+				printf("Processus %i is processing : commande %s \n", job->pid, job->cmd);
+			}
+			job=job->next;
 		}
 	}
+	
+
 }
 
 
@@ -94,7 +100,7 @@ void read_and_execute(struct cmdline *cmd){
 
 	else if(cmd->seq[0]!=NULL){
 
-		if(!strcmp(cmd->seq[0][0], "jobs")){
+		if(strcmp(cmd->seq[0][0], "jobs")==0){
 			display_list();
 		}
 		else{
@@ -102,6 +108,10 @@ void read_and_execute(struct cmdline *cmd){
 			pid_t pid[2];
 			if (cmd->seq[1]!=NULL){// on a un pipe |
 				pipe(pipes);
+				if (pipe(pipes)==-1){
+					perror("pipe error");
+					exit(EXIT_FAILURE);
+				}
 			}
 			int n=1;
 			if (cmd->seq[1]!=NULL){n=2;}
@@ -111,7 +121,8 @@ void read_and_execute(struct cmdline *cmd){
 
 			for (int i=0; i<n; i++){
 				pid[i]=fork();
-				if(pid[i]<0){printf("error fork");break;}
+				if(pid[i]<0){perror("error fork"); exit(EXIT_FAILURE);}
+
 				else if (pid[i]==0){
 					if(cmd->seq[1]!=NULL){ //on a bien un |
 						dup2(pipes[abs(i-1)], abs(i-1));
@@ -127,6 +138,7 @@ void read_and_execute(struct cmdline *cmd){
 						}
 						if(i==1 && cmd->out){
 							out = open(cmd->out, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
+							ftruncate(out, 0);
 							dup2(out, 1);
 							close(out);
 						}
@@ -145,6 +157,7 @@ void read_and_execute(struct cmdline *cmd){
 						}
 						if(cmd->out){
 							out = open(cmd->out, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
+							ftruncate(out,0);
 							dup2(out, 1);
 							close(out);
 						}
@@ -180,7 +193,7 @@ void read_and_execute(struct cmdline *cmd){
 
 
 #if USE_GUILE == 1
-#include <libguile.h>
+
 
 int question6_executer(char *line)
 {
@@ -191,8 +204,6 @@ int question6_executer(char *line)
 	 */
 	read_and_execute(parsecmd(&line));
 
-	/* Remove this line when using parsecmd as it will free it */
-	free(line);
 	
 	return 0;
 }
@@ -217,6 +228,7 @@ void terminate(char *line) {
 
 
 int main() {
+		
         printf("Variante %d: %s\n", VARIANTE, VARIANTE_STRING);
 
 #if USE_GUILE == 1
@@ -281,12 +293,15 @@ int main() {
 		for (i=0; l->seq[i]!=0; i++) {
 			char **cmd = l->seq[i];
 			printf("seq[%d]: ", i);
-                        for (j=0; cmd[j]!=0; j++) {
-                                printf("'%s' ", cmd[j]);
-                        }
+            for (j=0; cmd[j]!=0; j++) {
+                printf("'%s' ", cmd[j]);
+            }
 			printf("\n");
 		}
 		read_and_execute(l);
 	}
+	//for (struct List_Tache * job=list_current; job!=NULL; ){
+	//	job=remove_job(job);
+	//}
 
 }
