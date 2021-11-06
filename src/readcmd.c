@@ -13,6 +13,8 @@
 #include <limits.h>
 #include <string.h>
 #include "readcmd.h"
+#include <glob.h>
+
 
 static void memory_error(void)
 {
@@ -254,6 +256,8 @@ struct cmdline *parsecmd(char **pline)
 	s->seq = 0;
 	s->bg = 0;
 
+	glob_t global;
+
 	i = 0;
 	while ((w = words[i++]) != 0) {
 		switch (w[0]) {
@@ -339,9 +343,23 @@ struct cmdline *parsecmd(char **pline)
 			cmd_len = 0;
 			break;
 		default:
+
+			if(glob(words[i-1], GLOB_BRACE | GLOB_TILDE, NULL, &global)==0){
+				
+				for (int j=0; j<global.gl_pathc; j++){
+					cmd=xrealloc(cmd, (cmd_len +2)*sizeof(char *));
+					cmd[cmd_len]=xmalloc( (strlen(global.gl_pathv[j])+1) * sizeof(char));    
+			      	strcpy(cmd[cmd_len++],global.gl_pathv[j]);	      
+			      	cmd[cmd_len] = 0;
+				}
+			}
+
+
+			else {
 			cmd = xrealloc(cmd, (cmd_len + 2) * sizeof(char *));
 			cmd[cmd_len++] = w;
 			cmd[cmd_len] = 0;
+			}
 		}
 	}
 

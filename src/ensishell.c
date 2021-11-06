@@ -16,9 +16,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <sys/resource.h>
-#include <sys/time.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <signal.h>
 
 
 #include <libguile.h>
@@ -50,6 +50,11 @@ struct List_Tache {
 
 struct List_Tache *list_current = NULL ;
 
+struct rlimit lim;
+int set_limite =0;
+
+
+
 
 struct List_Tache* new_job(char * cmd, pid_t pid, struct List_Tache * head){
 	struct List_Tache* new= malloc(sizeof(struct List_Tache));
@@ -74,7 +79,7 @@ struct List_Tache * remove_job(struct List_Tache * head){
 void display_list(void){
 	int statut;
 	struct List_Tache *job = list_current;
-	if (job==NULL){
+	if (job==NULL || waitpid(job->pid, NULL, WNOHANG)){
 		printf("pas de processus en cours \n");
 	}
 	else{
@@ -91,17 +96,46 @@ void display_list(void){
 
 }
 
+void process_time_calcul (int sig, siginfo_t * siginfo, void * ctx){
+	struct List_Tache * job=list_current ;
+	while ( job!=NULL){
+		if (job->pid == siginfo->si_pid){
+			struct timeval temps;
+			gettimeofday(&temps, NULL);
+			float delta = (temps.tv_sec - job->debut.tv_sec + (temps.tv_usec- job->debut.tv_usec)*1E-6);
+			printf("\n Processus %i fini en %f secondes \n", job->pid, delta);
+			readline("ensishell>");
+			
+		}
+		job=job->next;
+	}
+	
+}
+
 
 void read_and_execute(struct cmdline *cmd){
-
+	
     if (cmd->err != NULL){
         printf("error: %s \n", cmd->err);
     }
-
 	else if(cmd->seq[0]!=NULL){
 
 		if(strcmp(cmd->seq[0][0], "jobs")==0){
 			display_list();
+		}
+		else if(strcmp(cmd->seq[0][0], "ulimit")==0){
+			int limite;
+			if (cmd->seq[0][1]!=NULL){
+				limite=atoi(cmd->seq[0][1]);
+				set_limite=1; //nous avons une limite
+				lim.rlim_cur=limite;
+				lim.rlim_max=limite+5;
+				printf("nouvelle limite de temps de %d secondes\n", limite);
+			}
+			else{
+				printf("pas de limite donnée, rééssayez\n");
+			}
+
 		}
 		else{
 			int pipes[2];
@@ -167,21 +201,27 @@ void read_and_execute(struct cmdline *cmd){
 							close(error);
 						}
 					}
+					
 					execvp(cmd->seq[i][0], cmd->seq[i]);
 				}
 				
 			}
 		
 			for(int i=0; i<n; i++){
-				if (!cmd->bg){ //si pas en background les suivants atendent
-					waitpid(pid[i], NULL, 0);
-				}
-				else{ //processus en background
-					list_current = new_job( cmd->seq[i][0], pid[i], list_current);
-				}
 				if (i==0 && cmd->seq[1] !=NULL){
 					close(pipes[1]);
 					close(pipes[0]);
+				}
+				if (set_limite>0){
+						printf("ahhh \n");
+						setrlimit(RLIMIT_CPU, &lim);
+					}
+				if (!cmd->bg){ //si pas en background les suivants attendent
+					waitpid(pid[i], NULL, 0);
+				}
+				else{ //processus en background
+
+					list_current = new_job( cmd->seq[i][0], pid[i], list_current);
 				}
 			}
 		}
@@ -236,6 +276,18 @@ int main() {
         /* register "executer" function in scheme */
         scm_c_define_gsubr("executer", 1, 0, 0, executer_wrapper);
 #endif
+	
+	struct sigaction signal;
+	signal.sa_sigaction = process_time_calcul;
+	signal.sa_flags = SA_SIGINFO | SA_NOCLDWAIT;
+    sigset_t *mask = malloc(sizeof(sigset_t));
+    sigemptyset(mask);
+    signal.sa_mask = *mask;
+    sigaction(SIGCHLD, &signal, NULL);
+	free(mask);
+
+
+	lim.rlim_cur=0;
 
 
 	while (1) {
@@ -264,16 +316,19 @@ int main() {
 			sprintf(catchligne, "(catch #t (lambda () %s) (lambda (key . parameters) (display \"mauvaise expression/bug en scheme\n\")))", line);
 			scm_eval_string(scm_from_locale_string(catchligne));
 			free(line);
-                        continue;
-                }
+            continue;
+            }
+			
 #endif
+	
+	
+
 
 		/* parsecmd free line and set it up to 0 */
 		l = parsecmd( & line);
-
-		/* If input stream closed, normal termination */
+			/* If input stream closed, normal termination */
 		if (!l) {
-		  
+			
 			terminate(0);
 		}
 		
@@ -300,8 +355,8 @@ int main() {
 		}
 		read_and_execute(l);
 	}
-	//for (struct List_Tache * job=list_current; job!=NULL; ){
-	//	job=remove_job(job);
-	//}
+	for (struct List_Tache * job=list_current; job!=NULL; ){
+		job=remove_job(job);
+	}
 
 }
