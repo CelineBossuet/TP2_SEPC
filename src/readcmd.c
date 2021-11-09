@@ -344,9 +344,12 @@ struct cmdline *parsecmd(char **pline)
 			break;
 		default:
 
+///////////////////Variante 6.2 : Jokers Etendus ///////////////////////////////
 			if(glob(words[i-1], GLOB_BRACE | GLOB_TILDE, NULL, &global)==0){
 				
 				for (int j=0; j<global.gl_pathc; j++){
+					// à chaque fois qu'on a un tilde ou une accolade on rajoute dans la
+					// commande ce à quoi cela correspond
 					cmd=xrealloc(cmd, (cmd_len +2)*sizeof(char *));
 					cmd[cmd_len]=xmalloc( (strlen(global.gl_pathv[j])+1) * sizeof(char));    
 			      	strcpy(cmd[cmd_len++],global.gl_pathv[j]);	      
@@ -360,6 +363,7 @@ struct cmdline *parsecmd(char **pline)
 			cmd[cmd_len++] = w;
 			cmd[cmd_len] = 0;
 			}
+/////////////////////////////////////////////////////////////////////////////////
 		}
 	}
 

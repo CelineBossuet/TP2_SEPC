@@ -38,9 +38,6 @@
 struct List_Tache {
 	pid_t  pid;
     char * cmd;
-    //char bg;
-	//int wait; //0 si il n'est pas en wait 
-	//int numero;
     struct List_Tache *next;
     struct timeval debut;
 };
@@ -51,12 +48,13 @@ struct List_Tache {
 struct List_Tache *list_current = NULL ;
 
 struct rlimit lim;
-int set_limite =0;
+int set_limite =0; 
 
 
 
 
 struct List_Tache* new_job(char * cmd, pid_t pid, struct List_Tache * head){
+	/*fonction permettant d'ajouter à la liste des taches un nouveau job*/
 	struct List_Tache* new= malloc(sizeof(struct List_Tache));
 	new->pid=pid;
 	new->cmd= malloc(sizeof(char)*strlen(cmd +1));
@@ -70,6 +68,7 @@ struct List_Tache* new_job(char * cmd, pid_t pid, struct List_Tache * head){
 }
 
 struct List_Tache * remove_job(struct List_Tache * head){
+	/*fonction permettant d'enlever les jobs une fois qu'il est fini*/
     struct List_Tache *new=head->next;
     free(head->cmd);
     free(head);
@@ -77,6 +76,7 @@ struct List_Tache * remove_job(struct List_Tache * head){
 }
 
 void display_list(void){
+	/*fonction utile pour la commande jobs*/
 	int statut;
 	struct List_Tache *job = list_current;
 	if (job==NULL || waitpid(job->pid, NULL, WNOHANG)){
@@ -97,6 +97,7 @@ void display_list(void){
 }
 
 void process_time_calcul (int sig, siginfo_t * siginfo, void * ctx){
+	/*fonction utile pour la variante du temps de calcul*/
 	struct List_Tache * job=list_current ;
 	while ( job!=NULL){
 		if (job->pid == siginfo->si_pid){
@@ -123,6 +124,7 @@ void read_and_execute(struct cmdline *cmd){
 		if(strcmp(cmd->seq[0][0], "jobs")==0){
 			display_list();
 		}
+		/*tentative de faire la limitation du temps de calcul (6.6)*/
 		else if(strcmp(cmd->seq[0][0], "ulimit")==0){
 			int limite;
 			if (cmd->seq[0][1]!=NULL){
@@ -158,13 +160,13 @@ void read_and_execute(struct cmdline *cmd){
 				if(pid[i]<0){perror("error fork"); exit(EXIT_FAILURE);}
 
 				else if (pid[i]==0){
-					if(cmd->seq[1]!=NULL){ //on a bien un |
+					if(cmd->seq[1]!=NULL){ //on a bien un 2eme argument
 						dup2(pipes[abs(i-1)], abs(i-1));
 						close(pipes[i]);
 						close(pipes[abs(i-1)]);
 
 						
-						if (i==0 && cmd->in){
+						if (i==0 && cmd->in){ 
 							in=open(cmd->in, O_RDONLY);
 							dup2(in, 0);
 							close(in);
@@ -212,6 +214,7 @@ void read_and_execute(struct cmdline *cmd){
 					close(pipes[1]);
 					close(pipes[0]);
 				}
+				/*tentative de faire la limitation du temps de calcul (6.6)*/
 				if (set_limite>0){
 						printf("ahhh \n");
 						setrlimit(RLIMIT_CPU, &lim);
